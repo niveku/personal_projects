@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 
@@ -151,13 +152,14 @@ plt.grid(True)
 # Mostrar el gráfico en Streamlit
 st.pyplot(plt)
 
-# --------------------- Ganancias -------
-cuota_inicial_range = np.linspace(50000000, valor_inmueble * 0.8, 100)  # Rango desde 50M a 80% del valor vivienda
+# --------------------- Ganancias ------------------
+# Rango de cuota inicial
+cuota_inicial_range = np.linspace(50000000, valor_inmueble * 0.8, 100)
 
-# Lista para almacenar las ganancias
+# Cálculo de la ganancia y retorno
 ganancias = []
+retornos_anuales = []
 
-# Cálculo de la ganancia para diferentes valores de cuota inicial
 for cuota_inicial in cuota_inicial_range:
     monto_financiado = valor_inmueble - cuota_inicial
     if modo_simple == 'leasing':
@@ -168,19 +170,92 @@ for cuota_inicial in cuota_inicial_range:
     ganancia = arriendo_referencia - (cuota + seguros)
     ganancias.append(ganancia)
 
-# Mostrar gráfica
-st.subheader("Ganancia en función de la cuota inicial")
+    # Cálculo del retorno efectivo anual
+    inversion_total = cuota_inicial + valor_residual
+    retorno_anual = (ganancia * 12 / inversion_total) * 100
+    retornos_anuales.append(retorno_anual)
 
-plt.figure(figsize=(10, 6))
-plt.plot(cuota_inicial_range / 1e6, ganancias, label="Ganancia", color="blue")
-plt.xlabel("Cuota Inicial (Millones de COP)")
-plt.ylabel("Ganancia Mensual (COP)")
-plt.axhline(0, color="red", linestyle="--", label="Ganancia = 0")
-plt.legend()
-plt.grid()
+# Gráfico interactivo de Ganancia vs. Cuota Inicial
+fig1 = go.Figure()
 
-# Aplicar formateo a los ejes
-plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(format_millions))
-plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(format_millions))
+fig1.add_trace(go.Scatter(
+    x=cuota_inicial_range / 1e6,
+    y=ganancias,
+    mode="lines+markers",
+    name="Ganancia Mensual (COP)",
+    hovertemplate="Cuota Inicial: %{x:.1f}M<br>Ganancia: %{y:.0f} COP"
+))
 
-st.pyplot(plt)
+fig1.add_trace(go.Scatter(
+    x=cuota_inicial_range / 1e6,
+    y=retornos_anuales,
+    mode="lines+markers",
+    name="Retorno E.A (%)",
+    yaxis="y2",
+    hovertemplate="Cuota Inicial: %{x:.1f}M<br>Retorno E.A: %{y:.2f}%"
+))
+
+fig1.update_layout(
+    title="Ganancia y Retorno E.A en función de la Cuota Inicial",
+    xaxis=dict(title="Cuota Inicial (Millones de COP)", tickformat=".1f"),
+    yaxis=dict(title="Ganancia Mensual (COP)", tickformat=".1f"),
+    yaxis2=dict(
+        title="Retorno E.A (%)",
+        overlaying="y",
+        side="right",
+    ),
+    legend=dict(x=0.01, y=0.99),
+    hovermode="x unified",
+)
+
+# Línea horizontal en y=0
+fig1.add_shape(type="line", x0=cuota_inicial_range[0] / 1e6, x1=cuota_inicial_range[-1] / 1e6, y0=0, y1=0,
+               line=dict(color="red", width=2, dash="dash"))
+
+st.plotly_chart(fig1)
+
+# Gráfico interactivo de Ganancia vs. Tiempo
+meses = np.arange(1, plazo_meses + 1)
+ganancias_tiempo = []
+arriendo_ajustado = arriendo_referencia  # Valor inicial del arriendo
+ipc_anual = st.number_input("Porcentaje de crecimiento anual del arriendo (IPC)", value=4.0, step=0.5) / 100
+
+for mes in meses:
+    if mes % 12 == 1 and mes > 1:  # Ajuste anual cada 12 meses
+        arriendo_ajustado *= (1 + ipc_anual)
+
+    cuota_inicial = cuota_inicial_range[0]  # Ejemplo con una cuota inicial fija
+    monto_financiado = valor_inmueble - cuota_inicial
+    if modo_simple == 'leasing':
+        cuota = simulador_leasing(monto_financiado, tasa_mensual, plazo_meses, valor_residual)
+    else:
+        cuota = simulador_credito_hipotecario(monto_financiado, tasa_mensual, plazo_meses)
+
+    ganancia = arriendo_ajustado - (cuota + seguros)
+    ganancias_tiempo.append(ganancia)
+
+fig2 = go.Figure()
+
+fig2.add_trace(go.Scatter(
+    x=meses,
+    y=ganancias_tiempo,
+    mode="lines+markers",
+    name="Ganancia Mensual en el Tiempo",
+    hovertemplate="Mes: %{x}<br>Ganancia: %{y:.0f} COP"
+))
+
+fig2.update_layout(
+    title="Ganancia en función del Tiempo con Ajuste por IPC",
+    xaxis=dict(
+        title="Tiempo (Meses)",
+        tickvals=np.arange(0, plazo_meses + 1, 12),
+        ticktext=[f"Año {i}" for i in range(0, plazo_meses // 12 + 1)]
+    ),
+    yaxis=dict(title="Ganancia Mensual (COP)", tickformat=".1f"),
+)
+
+# Línea horizontal en y=0
+fig2.add_shape(type="line", x0=1, x1=plazo_meses, y0=0, y1=0,
+               line=dict(color="red", width=2, dash="dash"))
+
+st.plotly_chart(fig2)
