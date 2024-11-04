@@ -10,18 +10,10 @@ def simulador_credito_hipotecario(valor_financiado, tasa_mensual, plazo_meses):
     return cuota_mensual
 
 def simulador_leasing(valor_financiado, tasa_mensual, plazo_meses, valor_residual):
-    # Ajuste en la fórmula para considerar la opción de compra
     cuota_mensual = (valor_financiado * tasa_mensual * ((1 + tasa_mensual) ** plazo_meses) - valor_residual * tasa_mensual) / ((1 + tasa_mensual) ** plazo_meses - 1)
     return cuota_mensual
 
-def generar_tabla_credito(valor_inmueble, cuota_inicial, tasa_interes_anual, plazo_anios, referencia, modo='hipotecario', opcion_compra=0):
-    # Cálculos iniciales
-    valor_residual = valor_inmueble * (opcion_compra / 100) if modo == 'leasing' else 0
-    valor_financiado = valor_inmueble - cuota_inicial - valor_residual
-    plazo_meses = plazo_anios * 12
-    tasa_mensual = tasa_interes_anual / 12 / 100
-    seguro_vida = round(valor_inmueble * 14.5e-5)
-    seguro_terremoto = round(valor_inmueble * 9.95e-5)
+def generar_tabla_credito(valor_financiado, tasa_mensual, plazo_meses, valor_residual, referencia, seguros, modo='hipotecario'):
 
     # Generar las cuotas de acuerdo al modo
     if modo == 'leasing':
@@ -29,14 +21,13 @@ def generar_tabla_credito(valor_inmueble, cuota_inicial, tasa_interes_anual, pla
     else:
         cuota = simulador_credito_hipotecario(valor_financiado, tasa_mensual, plazo_meses)
 
-    cuota = round(cuota) + seguro_vida + seguro_terremoto
+    cuota = round(cuota) + seguros
 
     # Crear la tabla de amortización
     datos = []
     saldo_restante = valor_financiado
     for mes in range(1, plazo_meses + 1):
         interes_mes = round(saldo_restante * tasa_mensual)
-        seguros = seguro_vida + seguro_terremoto
         capital_mes = cuota - interes_mes -seguros
         sentido = referencia - interes_mes - seguros
         saldo_restante -= capital_mes
@@ -63,15 +54,25 @@ tasa_interes_anual = st.sidebar.slider("Tasa de Interés Anual (%)", min_value=0
 plazo_anios = st.sidebar.slider("Plazo del Crédito (Años)", min_value=1, max_value=30, value=20)
 arriendo_referencia = st.sidebar.slider("Valor de Arriendo de Referencia (COP)", min_value=1_000_000, max_value=10_000_000, value=3_000_000, step=100_000)
 modo_simulador = st.sidebar.selectbox("Modo de Simulación", ("Crédito Hipotecario", "Leasing Habitacional"))
+modo_diccionario = {"Crédito Hipotecario": "hipotecario", "Leasing Habitacional": "leasing"}
+modo_simple = modo_diccionario.get(modo_simulador)
 
 # Opciones adicionales para leasing
 tabla = pd.DataFrame()
-if modo_simulador == "Leasing Habitacional":
+if modo_simple == "leasing":
     opcion_compra = st.sidebar.slider("Opcion Compra (%)", min_value=0, max_value=20, value=20)
-    tabla = generar_tabla_credito(valor_inmueble, cuota_inicial, tasa_interes_anual, plazo_anios, arriendo_referencia, modo='leasing', opcion_compra=opcion_compra)
 else:
     opcion_compra = 0
-    tabla = generar_tabla_credito(valor_inmueble, cuota_inicial, tasa_interes_anual, plazo_anios, arriendo_referencia, modo='hipotecario')
+
+# Parámetros Calculados
+valor_residual = valor_inmueble * (opcion_compra / 100) if modo_simple == "leasing" else 0
+valor_financiado = valor_inmueble - cuota_inicial - valor_residual
+plazo_meses = plazo_anios * 12
+tasa_mensual = tasa_interes_anual / 12 / 100
+seguro_vida = round(valor_inmueble * 14.5e-5)
+seguro_terremoto = round(valor_inmueble * 9.95e-5)
+seguros = seguro_vida + seguro_terremoto
+tabla = generar_tabla_credito(valor_financiado, tasa_mensual, plazo_meses, valor_residual, arriendo_referencia, seguros, modo=modo_simple)
 
 # Mostrar tabla y resumen
 st.subheader(f"Tabla de Amortización - {modo_simulador}")
@@ -110,8 +111,8 @@ for valor_inmueble in precio_inmueble_range:
     sentido_linea = []
     for cuota_inicial in cuota_inicial_range:
         # Obtener el valor de "sentido" para el primer mes
-        tabla = generar_tabla_credito(valor_inmueble, cuota_inicial, tasa_interes_anual, plazo_anios, arriendo_referencia, modo=modo_simulador.lower(), opcion_compra=opcion_compra)
-
+        financiado = valor_inmueble - cuota_inicial
+        tabla = generar_tabla_credito(financiado, tasa_mensual, plazo_meses, valor_residual, arriendo_referencia, seguros, modo=modo_simple)
         # Evita valores no válidos asignando 0 a `sentido` cuando es NaN o Inf
         sentido = tabla['Sentido'][0]
         if np.isnan(sentido) or np.isinf(sentido):
@@ -150,48 +151,36 @@ plt.grid(True)
 # Mostrar el gráfico en Streamlit
 st.pyplot(plt)
 
-# ---------------------
-# Rango de valores para el precio del inmueble y la tasa de interés
-precio_inmueble_range = np.arange(400_000_000, 700_000_000, 5_000_000)  # 61 valores
-tasa_interes_range = np.arange(0.01, 0.15, 0.005)  # 29 valores
+# --------------------- Ganancias -------
+cuota_inicial_range = np.linspace(50000000, valor_inmueble * 0.8, 100)  # Rango desde 50M a 80% del valor vivienda
 
-# Crear una matriz para almacenar los resultados
-sentidos_cero = np.zeros((len(tasa_interes_range), len(precio_inmueble_range)))
+# Lista para almacenar las ganancias
+ganancias = []
 
-# Calcular el sentido para cada combinación de precio del inmueble y tasa de interés
-for i, valor_inmueble in enumerate(precio_inmueble_range):
-    for j, tasa_interes in enumerate(tasa_interes_range):
-        # Obtener el valor de "sentido" para el primer mes
-        tabla = generar_tabla_credito(valor_inmueble, cuota_inicial, tasa_interes, plazo_anios, arriendo_referencia, modo=modo_simulador.lower(), opcion_compra=opcion_compra)
+# Cálculo de la ganancia para diferentes valores de cuota inicial
+for cuota_inicial in cuota_inicial_range:
+    monto_financiado = valor_inmueble - cuota_inicial
+    if modo_simple == 'leasing':
+        cuota = simulador_leasing(monto_financiado, tasa_mensual, plazo_meses, valor_residual)
+    else:
+        cuota = simulador_credito_hipotecario(monto_financiado, tasa_mensual, plazo_meses)
 
-        # Evitar valores no válidos asignando 0 a `sentido` cuando es NaN o Inf
-        sentido = tabla['Sentido'][0]
-        if np.isnan(sentido) or np.isinf(sentido):
-            sentido = 0
+    ganancia = arriendo_referencia - (cuota + seguros)
+    ganancias.append(ganancia)
 
-        # Asignar el valor calculado en la matriz
-        sentidos_cero[j, i] = sentido  # Nota: el índice se invierte aquí
+# Mostrar gráfica
+st.subheader("Ganancia en función de la cuota inicial")
 
-# Crear gráfico de línea de contorno donde el "sentido" es 0
 plt.figure(figsize=(10, 6))
-cp = plt.contour(precio_inmueble_range, tasa_interes_range, sentidos_cero, levels=[0], colors='blue', linewidths=2)
+plt.plot(cuota_inicial_range / 1e6, ganancias, label="Ganancia", color="blue")
+plt.xlabel("Cuota Inicial (Millones de COP)")
+plt.ylabel("Ganancia Mensual (COP)")
+plt.axhline(0, color="red", linestyle="--", label="Ganancia = 0")
+plt.legend()
+plt.grid()
 
-# Etiquetar la línea de contorno para sentido = 0
-plt.clabel(cp, inline=True, fontsize=8, fmt='Sentido = 0')
-
-# Formatear ejes para mostrar valores en millones para el precio del inmueble
-plt.title("Línea de Equilibrio del Sentido entre Precio del Inmueble y Tasa de Interés")
-plt.xlabel("Precio del Inmueble (COP)")
-plt.ylabel("Tasa de Interés")
-
-# Función para formatear los ejes en millones
-def format_millions(x, pos):
-    return f'{int(x * 1e-6)}M'
-
-# Aplicar formateo al eje X (Precio del Inmueble)
+# Aplicar formateo a los ejes
 plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(format_millions))
+plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(format_millions))
 
-plt.grid(True)
-
-# Mostrar el gráfico en Streamlit
 st.pyplot(plt)
