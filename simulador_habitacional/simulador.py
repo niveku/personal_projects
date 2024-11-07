@@ -50,7 +50,7 @@ def generar_tabla_credito(valor_financiado, tasa_mensual, plazo_meses, valor_res
     return pd.DataFrame(datos)
 
 # Interfaz en Streamlit
-st.title("Simulador de Crédito Hipotecario y Leasing Habitacional")
+st.title("Simulador de Crédito Hipotecario y Leasing Habitacional (Colombia)")
 
 # Parámetros de entrada
 st.sidebar.header("Parámetros del Simulador")
@@ -62,7 +62,7 @@ valor_inmueble = st.sidebar.number_input("Valor del Inmueble (Millones de COP)",
 min_cuota = round(valor_inmueble*3e-7) if modo_simple == "hipotecario" else round(valor_inmueble*1e-7)
 standard_cuota = 50 if 50>min_cuota else min_cuota
 cuota_inicial = st.sidebar.number_input("Cuota Inicial (Millones de COP)", min_value=min_cuota, value=standard_cuota, step=5)*1e6
-arriendo_referencia = st.sidebar.number_input("Arriendo de Referencia (Millones de COP)", min_value=0.8, value=2.5, step=0.1)*1e6
+arriendo_referencia = round(st.sidebar.number_input("Arriendo de Referencia (Millones de COP)", min_value=0.8, value=2.5, step=0.1)*1e6)
 
 max_year = 30 if modo_simple == "hipotecario" else 20
 tasa_interes_anual = st.sidebar.slider("Tasa de Interés Anual (%)", min_value=1.0, max_value=20.0, value=10.0, step=0.1)
@@ -74,6 +74,10 @@ if modo_simple == "leasing":
     opcion_compra = st.sidebar.slider("Opcion Compra (%)", min_value=0, max_value=20, value=20)
 else:
     opcion_compra = 0
+
+# Información en el sidebar
+st.sidebar.markdown("## Dashboard por Kevin Henao 👤")
+st.sidebar.markdown("[🔗 GitHub](https://github.com/niveku)")
 
 # Parámetros Calculados
 valor_residual = valor_inmueble * (opcion_compra / 100) if modo_simple == "leasing" else 0
@@ -89,8 +93,6 @@ tabla = generar_tabla_credito(valor_financiado, tasa_mensual, plazo_meses, valor
 st.subheader(f"Tabla de Amortización - {modo_simulador}")
 st.write(tabla)
 
-cuota_mensual = tabla['Cuota'][0]
-
 # Gráfico de saldo restante
 st.subheader("Gráfica de Saldo Restante")
 st.line_chart(tabla[['Mes', 'Saldo Restante']].set_index('Mes'))
@@ -101,9 +103,16 @@ grafico_pagos = tabla[['Mes', 'Interés Pagado', 'Capital Amortizado', 'Cuota']]
 st.line_chart(grafico_pagos)
 
 # Arriendo de referencia y cálculo de "sentido"
-sentido = tabla['Sentido'][0]
+mes_visto = st.slider(label="Mes #", min_value=0, max_value=plazo_meses, value=0)
+cuota_mensual = tabla['Cuota'][mes_visto]
+interes_mensual = tabla['Cuota'][mes_visto]
+seguros_mensual = tabla['Seguros'][mes_visto]
+sentido = tabla['Sentido'][mes_visto]
 
-st.metric(label="Cuota Mensual", value=f"{cuota_mensual:,.0f} COP")
+st.metric(label="Arriendo", value=f"{arriendo_referencia:,} COP")
+st.metric(label="Cuota Mensual", value=f"{cuota_mensual:,} COP")
+st.metric(label="Interés Pagado", value=f"{interes_mensual:,} COP")
+st.metric(label="Seguros Pagado", value=f"{seguros_mensual:,} COP")
 sentido_title = "Sentido = Arriendo - InteresesDelMes - Seguros = Lo que se abona realmente"
 if sentido > 0:
     st.metric(label=sentido_title, value=f"{sentido:,.0f} COP", delta="+Positivo", delta_color="normal")
@@ -190,7 +199,7 @@ fig1.add_trace(go.Scatter(
     y=ganancias,
     mode="lines+markers",
     name="Ganancia Mensual (COP)",
-    hovertemplate="Cuota Inicial: %{x:.1f}M<br>Ganancia: %{y:.0f} COP"
+    hovertemplate="Ganancia: %{y:,} COP"
 ))
 
 fig1.add_trace(go.Scatter(
@@ -199,7 +208,7 @@ fig1.add_trace(go.Scatter(
     mode="lines+markers",
     name="Retorno E.A (%)",
     yaxis="y2",
-    hovertemplate="Cuota Inicial: %{x:.1f}M<br>Retorno E.A: %{y:.2f}%"
+    hovertemplate="Retorno E.A: %{y:.2f}%"
 ))
 
 fig1.update_layout(
@@ -266,3 +275,8 @@ fig2.add_shape(type="line", x0=1, x1=plazo_meses, y0=0, y1=0,
                line=dict(color="red", width=2, dash="dash"))
 
 st.plotly_chart(fig2)
+
+# Información de créditos al final de la página principal
+st.markdown("---")  # Línea separadora
+st.markdown("**Creado por [Kevin Henao](https://github.com/tu_usuario)**")
+st.markdown("Desarrollado en Bogotá, Colombia 🇨🇴")
