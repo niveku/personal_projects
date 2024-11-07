@@ -5,6 +5,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+# Función para formatear los ejes en millones
+def format_millions(x, _pos):
+    return f'{int(x * 1e-6)}M$'
 
 def simulador_credito_hipotecario(valor_financiado, tasa_mensual, plazo_meses):
     cuota_mensual = valor_financiado * (tasa_mensual * (1 + tasa_mensual) ** plazo_meses) / ((1 + tasa_mensual) ** plazo_meses - 1)
@@ -28,11 +31,13 @@ def generar_tabla_credito(valor_financiado, tasa_mensual, plazo_meses, valor_res
     datos = []
     saldo_restante = valor_financiado
     for mes in range(1, plazo_meses + 1):
+        year = ((mes - 1) // 12) +1
         interes_mes = round(saldo_restante * tasa_mensual)
         capital_mes = cuota - interes_mes -seguros
         sentido = referencia - interes_mes - seguros
         saldo_restante -= capital_mes
         datos.append({
+            'Año': year,
             'Mes': mes,
             'Cuota': cuota,
             'Interés Pagado': interes_mes,
@@ -49,14 +54,19 @@ st.title("Simulador de Crédito Hipotecario y Leasing Habitacional")
 
 # Parámetros de entrada
 st.sidebar.header("Parámetros del Simulador")
-valor_inmueble = st.sidebar.number_input("Valor del Inmueble (COP)", min_value=100_000_000, value=530_000_000, step=5_000_000)
-cuota_inicial = st.sidebar.number_input("Cuota Inicial (COP)", min_value=0, value=50_000_000, step=5_000_000)
-tasa_interes_anual = st.sidebar.slider("Tasa de Interés Anual (%)", min_value=0.0, max_value=20.0, value=12.0, step=0.1)
-plazo_anios = st.sidebar.slider("Plazo del Crédito (Años)", min_value=1, max_value=30, value=20)
-arriendo_referencia = st.sidebar.slider("Valor de Arriendo de Referencia (COP)", min_value=1_000_000, max_value=10_000_000, value=3_000_000, step=100_000)
 modo_simulador = st.sidebar.selectbox("Modo de Simulación", ("Crédito Hipotecario", "Leasing Habitacional"))
 modo_diccionario = {"Crédito Hipotecario": "hipotecario", "Leasing Habitacional": "leasing"}
 modo_simple = modo_diccionario.get(modo_simulador)
+
+valor_inmueble = st.sidebar.number_input("Valor del Inmueble (Millones de COP)", min_value=150, value=570, step=5)*1e6
+min_cuota = round(valor_inmueble*3e-7) if modo_simple == "hipotecario" else round(valor_inmueble*1e-7)
+standard_cuota = 50 if 50>min_cuota else min_cuota
+cuota_inicial = st.sidebar.number_input("Cuota Inicial (Millones de COP)", min_value=min_cuota, value=standard_cuota, step=5)*1e6
+arriendo_referencia = st.sidebar.number_input("Arriendo de Referencia (Millones de COP)", min_value=0.8, value=2.5, step=0.1)*1e6
+
+max_year = 30 if modo_simple == "hipotecario" else 20
+tasa_interes_anual = st.sidebar.slider("Tasa de Interés Anual (%)", min_value=1.0, max_value=20.0, value=10.0, step=0.1)
+plazo_anios = st.sidebar.slider("Plazo del Crédito (Años)", min_value=1, max_value=max_year, value=20)
 
 # Opciones adicionales para leasing
 tabla = pd.DataFrame()
@@ -94,10 +104,11 @@ st.line_chart(grafico_pagos)
 sentido = tabla['Sentido'][0]
 
 st.metric(label="Cuota Mensual", value=f"{cuota_mensual:,.0f} COP")
+sentido_title = "Sentido = Arriendo - InteresesDelMes - Seguros = Lo que se abona realmente"
 if sentido > 0:
-    st.metric(label="Sentido", value=f"{sentido:,.0f} COP", delta="Positivo", delta_color="normal")
+    st.metric(label=sentido_title, value=f"{sentido:,.0f} COP", delta="+Positivo", delta_color="normal")
 else:
-    st.metric(label="Sentido", value=f"{sentido:,.0f} COP", delta="Negativo", delta_color="inverse")
+    st.metric(label=sentido_title, value=f"{sentido:,.0f} COP", delta="-Negativo", delta_color="normal")
 
 # -------------------------
 # Genera los valores de rango para precio del inmueble y cuota inicial
@@ -108,11 +119,11 @@ cuota_inicial_range = np.arange(0, 250_000_000, 5_000_000)
 sentidos_cero = []
 
 # Calcular el sentido para cada combinación de precio del inmueble y cuota inicial
-for valor_inmueble in precio_inmueble_range:
+for v_inmueble in precio_inmueble_range:
     sentido_linea = []
-    for cuota_inicial in cuota_inicial_range:
+    for c_inicial in cuota_inicial_range:
         # Obtener el valor de "sentido" para el primer mes
-        financiado = valor_inmueble - cuota_inicial
+        financiado = v_inmueble - c_inicial
         tabla = generar_tabla_credito(financiado, tasa_mensual, plazo_meses, valor_residual, arriendo_referencia, seguros, modo=modo_simple)
         # Evita valores no válidos asignando 0 a `sentido` cuando es NaN o Inf
         sentido = tabla['Sentido'][0]
@@ -139,10 +150,6 @@ plt.title("Línea de Equilibrio del Sentido entre Cuota Inicial y Precio del Inm
 plt.xlabel("Cuota Inicial (COP)")
 plt.ylabel("Precio del Inmueble (COP)")
 
-# Función para formatear los ejes en millones
-def format_millions(x, pos):
-    return f'{int(x * 1e-6)}M'
-
 # Aplicar formateo a los ejes
 plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(format_millions))
 plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(format_millions))
@@ -154,14 +161,14 @@ st.pyplot(plt)
 
 # --------------------- Ganancias ------------------
 # Rango de cuota inicial
-cuota_inicial_range = np.linspace(50000000, valor_inmueble * 0.8, 100)
+cuota_inicial_range = np.linspace(cuota_inicial, valor_inmueble, 100)
 
 # Cálculo de la ganancia y retorno
 ganancias = []
 retornos_anuales = []
 
-for cuota_inicial in cuota_inicial_range:
-    monto_financiado = valor_inmueble - cuota_inicial
+for c_inicial in cuota_inicial_range:
+    monto_financiado = valor_inmueble - c_inicial
     if modo_simple == 'leasing':
         cuota = simulador_leasing(monto_financiado, tasa_mensual, plazo_meses, valor_residual)
     else:
@@ -171,7 +178,7 @@ for cuota_inicial in cuota_inicial_range:
     ganancias.append(ganancia)
 
     # Cálculo del retorno efectivo anual
-    inversion_total = cuota_inicial + valor_residual
+    inversion_total = c_inicial
     retorno_anual = (ganancia * 12 / inversion_total) * 100
     retornos_anuales.append(retorno_anual)
 
@@ -196,7 +203,7 @@ fig1.add_trace(go.Scatter(
 ))
 
 fig1.update_layout(
-    title="Ganancia y Retorno E.A en función de la Cuota Inicial",
+    title=f"Ganancia y Retorno E.A Inicial en función de la Cuota Inicial Y Arriendo",
     xaxis=dict(title="Cuota Inicial (Millones de COP)", tickformat=".1f"),
     yaxis=dict(title="Ganancia Mensual (COP)", tickformat=".1f"),
     yaxis2=dict(
@@ -224,8 +231,8 @@ for mes in meses:
     if mes % 12 == 1 and mes > 1:  # Ajuste anual cada 12 meses
         arriendo_ajustado *= (1 + ipc_anual)
 
-    cuota_inicial = cuota_inicial_range[0]  # Ejemplo con una cuota inicial fija
-    monto_financiado = valor_inmueble - cuota_inicial
+    c_inicial = cuota_inicial_range[0]  # Ejemplo con una cuota inicial fija
+    monto_financiado = valor_inmueble - c_inicial
     if modo_simple == 'leasing':
         cuota = simulador_leasing(monto_financiado, tasa_mensual, plazo_meses, valor_residual)
     else:
