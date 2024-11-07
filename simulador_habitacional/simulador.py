@@ -101,8 +101,8 @@ else:
 
 # -------------------------
 # Genera los valores de rango para precio del inmueble y cuota inicial
-precio_inmueble_range = np.arange(250_000_000, 700_000_000, 10_000_000)
-cuota_inicial_range = np.arange(0, 250_000_000, 10_000_000)
+precio_inmueble_range = np.arange(250_000_000, 750_000_000, 10_000_000)
+cuota_inicial_range = np.arange(0, 250_000_000, 5_000_000)
 
 # Lista para almacenar los resultados
 sentidos_cero = []
