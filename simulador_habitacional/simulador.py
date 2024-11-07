@@ -25,25 +25,33 @@ def generar_tabla_credito(valor_financiado, tasa_mensual, plazo_meses, valor_res
     else:
         cuota = simulador_credito_hipotecario(valor_financiado, tasa_mensual, plazo_meses)
 
-    cuota = round(cuota) + seguros
+    cuota = round(cuota)
 
     # Crear la tabla de amortización
     datos = []
     saldo_restante = valor_financiado
+    arriendo_ajustado = referencia
     for mes in range(1, plazo_meses + 1):
         year = ((mes - 1) // 12) +1
+
+        if mes % 12 == 1 and year > 1:  # Ajuste anual cada 12 meses
+            arriendo_ajustado = round(arriendo_ajustado*(1 + ipc_anual))
+
         interes_mes = round(saldo_restante * tasa_mensual)
-        capital_mes = cuota - interes_mes -seguros
-        sentido = referencia - interes_mes - seguros
+        capital_mes = cuota - interes_mes
+        ganancia = arriendo_ajustado - cuota - seguros
+        sentido = arriendo_ajustado - interes_mes - seguros
         saldo_restante -= capital_mes
         datos.append({
             'Año': year,
             'Mes': mes,
-            'Cuota': cuota,
+            'Cuota': cuota+seguros,
             'Interés Pagado': interes_mes,
             'Capital Amortizado': capital_mes,
             'Seguros': seguros,
             'Saldo Restante': max(saldo_restante, valor_residual) if modo == 'leasing' and mes == plazo_meses else max(saldo_restante, 0),
+            'Arriendo': arriendo_ajustado,
+            'Ganancia': ganancia,
             'Sentido': sentido
         })
 
@@ -62,7 +70,7 @@ valor_inmueble = st.sidebar.number_input("Valor del Inmueble (Millones de COP)",
 min_cuota = round(valor_inmueble*3e-7) if modo_simple == "hipotecario" else round(valor_inmueble*1e-7)
 standard_cuota = 50 if 50>min_cuota else min_cuota
 cuota_inicial = st.sidebar.number_input("Cuota Inicial (Millones de COP)", min_value=min_cuota, value=standard_cuota, step=5)*1e6
-arriendo_referencia = round(st.sidebar.number_input("Arriendo de Referencia (Millones de COP)", min_value=0.8, value=2.5, step=0.1)*1e6)
+arriendo_referencia = round(st.sidebar.number_input("Arriendo de Referencia (Millones de COP)", min_value=0.8, value=3.5, step=0.1)*1e6)
 
 max_year = 30 if modo_simple == "hipotecario" else 20
 tasa_interes_anual = st.sidebar.slider("Tasa de Interés Anual (%)", min_value=1.0, max_value=20.0, value=10.0, step=0.1)
@@ -74,6 +82,8 @@ if modo_simple == "leasing":
     opcion_compra = st.sidebar.slider("Opcion Compra (%)", min_value=0, max_value=20, value=20)
 else:
     opcion_compra = 0
+
+ipc_anual = st.sidebar.number_input("Porcentaje de crecimiento anual (IPC)", value=4.0, step=0.5) / 100
 
 # Información en el sidebar
 st.sidebar.markdown("## Dashboard por Kevin Henao 👤")
@@ -104,16 +114,19 @@ st.line_chart(grafico_pagos)
 
 # Arriendo de referencia y cálculo de "sentido"
 mes_visto = st.slider(label="Mes #", min_value=0, max_value=plazo_meses, value=0)
+arriendo_mensual = tabla['Arriendo'][mes_visto]
 cuota_mensual = tabla['Cuota'][mes_visto]
-interes_mensual = tabla['Cuota'][mes_visto]
+abono_mensual = tabla['Capital Amortizado'][mes_visto]
+interes_mensual = tabla['Interés Pagado'][mes_visto]
 seguros_mensual = tabla['Seguros'][mes_visto]
 sentido = tabla['Sentido'][mes_visto]
 
-st.metric(label="Arriendo", value=f"{arriendo_referencia:,} COP")
+st.metric(label="Arriendo", value=f"{arriendo_mensual:,} COP")
 st.metric(label="Cuota Mensual", value=f"{cuota_mensual:,} COP")
+st.metric(label="Capital Amortizado", value=f"{abono_mensual:,} COP")
 st.metric(label="Interés Pagado", value=f"{interes_mensual:,} COP")
 st.metric(label="Seguros Pagado", value=f"{seguros_mensual:,} COP")
-sentido_title = "Sentido = Arriendo - InteresesDelMes - Seguros = Lo que se abona realmente"
+sentido_title = "Sentido = Arriendo(O Referencia) - InteresesDelMes - Seguros = Lo que se abona realmente"
 if sentido > 0:
     st.metric(label=sentido_title, value=f"{sentido:,.0f} COP", delta="+Positivo", delta_color="normal")
 else:
@@ -133,9 +146,9 @@ for v_inmueble in precio_inmueble_range:
     for c_inicial in cuota_inicial_range:
         # Obtener el valor de "sentido" para el primer mes
         financiado = v_inmueble - c_inicial
-        tabla = generar_tabla_credito(financiado, tasa_mensual, plazo_meses, valor_residual, arriendo_referencia, seguros, modo=modo_simple)
+        tabla_gen = generar_tabla_credito(financiado, tasa_mensual, plazo_meses, valor_residual, arriendo_referencia, seguros, modo=modo_simple)
         # Evita valores no válidos asignando 0 a `sentido` cuando es NaN o Inf
-        sentido = tabla['Sentido'][0]
+        sentido = tabla_gen['Sentido'][0]
         if np.isnan(sentido) or np.isinf(sentido):
             sentido = 0  # Ajusta según prefieras
 
@@ -183,7 +196,7 @@ for c_inicial in cuota_inicial_range:
     else:
         cuota = simulador_credito_hipotecario(monto_financiado, tasa_mensual, plazo_meses)
 
-    ganancia = arriendo_referencia - (cuota + seguros)
+    ganancia = round(arriendo_referencia - (cuota + seguros))
     ganancias.append(ganancia)
 
     # Cálculo del retorno efectivo anual
@@ -199,7 +212,7 @@ fig1.add_trace(go.Scatter(
     y=ganancias,
     mode="lines+markers",
     name="Ganancia Mensual (COP)",
-    hovertemplate="Ganancia: %{y:,} COP"
+    hovertemplate="%{y:,} COP"
 ))
 
 fig1.add_trace(go.Scatter(
@@ -208,7 +221,7 @@ fig1.add_trace(go.Scatter(
     mode="lines+markers",
     name="Retorno E.A (%)",
     yaxis="y2",
-    hovertemplate="Retorno E.A: %{y:.2f}%"
+    hovertemplate="%{y:.2f}%"
 ))
 
 fig1.update_layout(
@@ -225,39 +238,19 @@ fig1.update_layout(
 )
 
 # Línea horizontal en y=0
-fig1.add_shape(type="line", x0=cuota_inicial_range[0] / 1e6, x1=cuota_inicial_range[-1] / 1e6, y0=0, y1=0,
-               line=dict(color="red", width=2, dash="dash"))
+# fig1.add_shape(type="line", x0=cuota_inicial_range[0] / 1e6, x1=cuota_inicial_range[-1] / 1e6, y0=0, y1=0,
+#                line=dict(color="red", width=2, dash="dash"))
 
 st.plotly_chart(fig1)
-
-# Gráfico interactivo de Ganancia vs. Tiempo
-meses = np.arange(1, plazo_meses + 1)
-ganancias_tiempo = []
-arriendo_ajustado = arriendo_referencia  # Valor inicial del arriendo
-ipc_anual = st.number_input("Porcentaje de crecimiento anual del arriendo (IPC)", value=4.0, step=0.5) / 100
-
-for mes in meses:
-    if mes % 12 == 1 and mes > 1:  # Ajuste anual cada 12 meses
-        arriendo_ajustado *= (1 + ipc_anual)
-
-    c_inicial = cuota_inicial_range[0]  # Ejemplo con una cuota inicial fija
-    monto_financiado = valor_inmueble - c_inicial
-    if modo_simple == 'leasing':
-        cuota = simulador_leasing(monto_financiado, tasa_mensual, plazo_meses, valor_residual)
-    else:
-        cuota = simulador_credito_hipotecario(monto_financiado, tasa_mensual, plazo_meses)
-
-    ganancia = arriendo_ajustado - (cuota + seguros)
-    ganancias_tiempo.append(ganancia)
 
 fig2 = go.Figure()
 
 fig2.add_trace(go.Scatter(
-    x=meses,
-    y=ganancias_tiempo,
+    x=tabla["Mes"],
+    y=tabla["Ganancia"],
     mode="lines+markers",
     name="Ganancia Mensual en el Tiempo",
-    hovertemplate="Mes: %{x}<br>Ganancia: %{y:.0f} COP"
+    hovertemplate="Mes: %{x}<br>Ganancia: %{y:,} COP"
 ))
 
 fig2.update_layout(
