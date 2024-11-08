@@ -39,23 +39,41 @@ def generar_tabla_credito(valor_financiado, tasa_mensual, plazo_meses, valor_res
 
         interes_mes = round(saldo_restante * tasa_mensual)
         capital_mes = cuota - interes_mes
-        ganancia = arriendo_ajustado - cuota - seguros
-        sentido = arriendo_ajustado - interes_mes - seguros
+        cuota_real = cuota + seguros
+        ganancia = arriendo_ajustado - cuota_real
+
+        # Factor de Equilibrio de Costos (FEC)
+        FEC = (1 - (cuota / (arriendo_ajustado * 1.1))) * 100  # Va de -100 a 0 en relación a la cuota
+
+        # Factor de Eficiencia de Capital (FECap)
+        FECap = min(1, capital_mes / (cuota * 0.5)) * 100  # Asegura máximo de 100%
+
+        # Cálculo de "Sentido" combinando ambos factores
+        sentido = round(FEC + FECap*0.6, 1)
+
+        equilibrio = arriendo_ajustado - interes_mes - seguros
         saldo_restante -= capital_mes
+
         datos.append({
             'Año': year,
             'Mes': mes,
-            'Cuota': cuota+seguros,
+            'Cuota': cuota_real,
             'Interés Pagado': interes_mes,
             'Capital Amortizado': capital_mes,
             'Seguros': seguros,
             'Saldo Restante': max(saldo_restante, valor_residual) if modo == 'leasing' and mes == plazo_meses else max(saldo_restante, 0),
             'Arriendo': arriendo_ajustado,
             'Ganancia': ganancia,
+            'Equilibrio': equilibrio,
             'Sentido': sentido
         })
 
     return pd.DataFrame(datos)
+
+def calcular_equilibrio_interes(valor_financiado, tasa, seguros):
+    intereses = (valor_financiado) * tasa
+    sentido_cal = arriendo_referencia - intereses - seguros
+    return sentido_cal
 
 # Interfaz en Streamlit
 st.title("Simulador de Crédito Hipotecario y Leasing Habitacional (Colombia)")
@@ -123,63 +141,21 @@ sentido = tabla['Sentido'][mes_visto]
 
 st.metric(label="Arriendo", value=f"{arriendo_mensual:,} COP")
 st.metric(label="Cuota Mensual", value=f"{cuota_mensual:,} COP")
-st.metric(label="Capital Amortizado", value=f"{abono_mensual:,} COP")
 st.metric(label="Interés Pagado", value=f"{interes_mensual:,} COP")
+st.metric(label="Capital Amortizado", value=f"{abono_mensual:,} COP")
 st.metric(label="Seguros Pagado", value=f"{seguros_mensual:,} COP")
-sentido_title = "Sentido = Arriendo(O Referencia) - InteresesDelMes - Seguros = Lo que se abona realmente"
-if sentido > 0:
-    st.metric(label=sentido_title, value=f"{sentido:,.0f} COP", delta="+Positivo", delta_color="normal")
+
+sentido_title = "Sentido"
+if sentido < 0:
+    st.metric(label=sentido_title, value=f"{sentido:,.1f}%", delta="-Terrible", delta_color="normal")
+elif sentido < 20:
+    st.metric(label=sentido_title, value=f"{sentido:,.1f}%", delta="-Malo", delta_color="normal")
+elif sentido < 50:
+    st.metric(label=sentido_title, value=f"{sentido:,.1f}%", delta="+Decente", delta_color="normal")
+elif sentido < 80:
+    st.metric(label=sentido_title, value=f"{sentido:,.1f}%", delta="+Bueno", delta_color="normal")
 else:
-    st.metric(label=sentido_title, value=f"{sentido:,.0f} COP", delta="-Negativo", delta_color="normal")
-
-# -------------------------
-# Genera los valores de rango para precio del inmueble y cuota inicial
-precio_inmueble_range = np.arange(250_000_000, 750_000_000, 10_000_000)
-cuota_inicial_range = np.arange(0, 250_000_000, 5_000_000)
-
-# Lista para almacenar los resultados
-sentidos_cero = []
-
-# Calcular el sentido para cada combinación de precio del inmueble y cuota inicial
-for v_inmueble in precio_inmueble_range:
-    sentido_linea = []
-    for c_inicial in cuota_inicial_range:
-        # Obtener el valor de "sentido" para el primer mes
-        financiado = v_inmueble - c_inicial
-        tabla_gen = generar_tabla_credito(financiado, tasa_mensual, plazo_meses, valor_residual, arriendo_referencia, seguros, modo=modo_simple)
-        # Evita valores no válidos asignando 0 a `sentido` cuando es NaN o Inf
-        sentido = tabla_gen['Sentido'][0]
-        if np.isnan(sentido) or np.isinf(sentido):
-            sentido = 0  # Ajusta según prefieras
-
-        sentido_linea.append(sentido)
-    sentidos_cero.append(sentido_linea)
-
-# Convertir a numpy array y reemplazar cualquier NaN o Inf remanente
-sentidos_cero = np.nan_to_num(np.array(sentidos_cero), nan=0, posinf=0, neginf=0)
-
-# Crear gráfico de línea de contorno donde el "sentido" es 0
-plt.figure(figsize=(10, 6))
-cp = plt.contourf(cuota_inicial_range, precio_inmueble_range, sentidos_cero, levels=20, cmap="RdYlGn")  # cmap para colores claros y oscuros
-cbar = plt.colorbar(cp, label="Sentido")
-
-# Agregar línea de contorno para sentido = 0
-contour_zero = plt.contour(cuota_inicial_range, precio_inmueble_range, sentidos_cero, levels=[0], colors='blue', linewidths=2, linestyles='dashed')
-plt.clabel(contour_zero, inline=True, fontsize=8, fmt='Sentido = 0')
-
-# Formatear ejes para mostrar valores en millones
-plt.title("Línea de Equilibrio del Sentido entre Cuota Inicial y Precio del Inmueble")
-plt.xlabel("Cuota Inicial (COP)")
-plt.ylabel("Precio del Inmueble (COP)")
-
-# Aplicar formateo a los ejes
-plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(format_millions))
-plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(format_millions))
-
-plt.grid(True)
-
-# Mostrar el gráfico en Streamlit
-st.pyplot(plt)
+    st.metric(label=sentido_title, value=f"{sentido:,.1f}%", delta="+Increible", delta_color="normal")
 
 # --------------------- Ganancias ------------------
 # Rango de cuota inicial
@@ -268,6 +244,51 @@ fig2.add_shape(type="line", x0=1, x1=plazo_meses, y0=0, y1=0,
                line=dict(color="red", width=2, dash="dash"))
 
 st.plotly_chart(fig2)
+
+# ------------- Gráfico de Sentido ----------------
+# Genera los valores de rango para precio del inmueble y cuota inicial
+precio_inmueble_range = np.arange(250_000_000, 750_000_000, 10_000_000)
+cuota_inicial_range = np.arange(0, 250_000_000, 5_000_000)
+
+# Lista para almacenar los resultados
+equilibrio_cero = []
+
+# Calcular el sentido para cada combinación de precio del inmueble y cuota inicial
+for v_inmueble in precio_inmueble_range:
+    equilibrio_linea = []
+    for c_inicial in cuota_inicial_range:
+        # Obtener el valor del equilibrio para el primer mes
+        financiado = v_inmueble - c_inicial
+        equilibrio = calcular_equilibrio_interes(financiado, tasa_mensual, seguros)
+
+        equilibrio_linea.append(equilibrio)
+    equilibrio_cero.append(equilibrio_linea)
+
+# Convertir a numpy array y reemplazar cualquier NaN o Inf remanente
+equilibrio_cero = np.nan_to_num(np.array(equilibrio_cero), nan=0, posinf=0, neginf=0)
+
+# Crear gráfico de línea de contorno donde el "sentido" es 0
+plt.figure(figsize=(10, 6))
+cp = plt.contourf(cuota_inicial_range, precio_inmueble_range, equilibrio_cero, levels=20, cmap="RdYlGn")  # cmap para colores claros y oscuros
+cbar = plt.colorbar(cp, label="Equilibrio")
+
+# Agregar línea de contorno para sentido = 0
+contour_zero = plt.contour(cuota_inicial_range, precio_inmueble_range, equilibrio_cero, levels=[0], colors='blue', linewidths=2, linestyles='dashed')
+plt.clabel(contour_zero, inline=True, fontsize=8, fmt='Equilibrio = Arr - Int - Seg')
+
+# Formatear ejes para mostrar valores en millones
+plt.title("Línea de Equilibrio del Interés entre Cuota Inicial y Precio del Inmueble")
+plt.xlabel("Cuota Inicial (COP)")
+plt.ylabel("Precio del Inmueble (COP)")
+
+# Aplicar formateo a los ejes
+plt.gca().xaxis.set_major_formatter(ticker.FuncFormatter(format_millions))
+plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(format_millions))
+
+plt.grid(True)
+
+# Mostrar el gráfico en Streamlit
+st.pyplot(plt)
 
 # Información de créditos al final de la página principal
 st.markdown("---")  # Línea separadora
