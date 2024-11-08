@@ -288,7 +288,7 @@ plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(format_millions))
 plt.grid(True)
 
 # Mostrar el gráfico en Streamlit
-st.pyplot(plt)
+st.pyplot(plt.gcf())
 
 # Información de créditos al final de la página principal
 st.markdown("---")  # Línea separadora
