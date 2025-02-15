@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alternar SVGs con Animación</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: #f0f0f0;
+      overflow: hidden; /* Para evitar scrollbars */
+      flex-direction: column;
+    }
+    .responsive-svg {
+      width: 100%;
+      max-width: 100%; /* Asegura que no supere el ancho del contenedor */
+      height: auto;
+      max-height: 100%;
+      display: flex;
+      justify-content: center; /* Centra el contenido horizontalmente */
+      align-items: center; /* Centra el contenido verticalmente */
+      opacity: 0; /* Inicialmente invisible */
+      transform: scale(0.9); /* Inicialmente más pequeño */
+      transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out; /* Transiciones */
+    }
+    .hidden {
+      opacity: 0; /* Ocultar el SVG */
+      transform: scale(0.9); /* Tamaño más pequeño */
+    }
+    .visible {
+      opacity: 1; /* Mostrar el SVG */
+      transform: scale(1); /* Tamaño normal */
+    }
+    .buttons {
+      margin-top: 20px;
+    }
+    button {
+      margin: 0 10px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Contenedores de los SVG -->
+  <div class="responsive-svg visible" id="svg1">
+    <object type="image/svg+xml" data="images/page1.svg"></object>
+  </div>
+  <div class="responsive-svg hidden" id="svg2">
+    <object type="image/svg+xml" data="images/page2.svg"></object>
+  </div>
+  <div class="buttons">
+    <button onclick="showSVG('svg1')">Página 1</button>
+    <button onclick="showSVG('svg2')">Página 2</button>
+  </div>
+
+  <script>
+    // Función para mostrar el SVG específico y ocultar el otro
+    function showSVG(svgId) {
+      const visibleSvg = document.querySelector('.responsive-svg.visible');
+      const targetSvg = document.getElementById(svgId);
+
+      if (visibleSvg) {
+        visibleSvg.classList.remove('visible');
+        visibleSvg.classList.add('hidden');
+      }
+
+      targetSvg.classList.remove('hidden');
+      targetSvg.classList.add('visible');
+    }
+
+    // Mostrar el primer SVG por defecto al cargar la página
+    window.onload = () => {
+      showSVG('svg1');
+    };
+  </script>
+</body>
+</html>
